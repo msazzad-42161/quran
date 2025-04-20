@@ -6,15 +6,15 @@ import { MaterialIcons } from '@expo/vector-icons';
 import Pdf from 'react-native-pdf';
 import { useQuery } from '@realm/react';
 import { Bookmark } from '../models/Bookmark';
-import { NavigationProp, Route } from '@react-navigation/native';
+import { NavigationProp, Route, useFocusEffect } from '@react-navigation/native';
 
 const TOTAL_PAGES = 614;
 interface HafeziQuranProps {
     navigation: NavigationProp<any, any>;
     route: Route<any, any>;
 }
-const HafeziQuran = ({ navigation, route }: HafeziQuranProps) => {
 
+const HafeziQuran = ({ navigation, route }: HafeziQuranProps) => {
     const bookmarks = useQuery(Bookmark);
     const pdfRef = useRef(null);
     const { gotoPageNumber } = route.params ?? { gotoPageNumber: 1 };
@@ -25,13 +25,27 @@ const HafeziQuran = ({ navigation, route }: HafeziQuranProps) => {
     const [currentPage, setCurrentPage] = useState(gotoPageNumber);
     const [error, setError] = useState<string | null>(null);
     const [isBookmarked, setIsBookmarked] = useState(false);
+    const [shouldRenderPdf, setShouldRenderPdf] = useState(true);
+
+    // Handle focus/blur events for navigation
+    useFocusEffect(
+        React.useCallback(() => {
+            setShouldRenderPdf(true);
+
+            return () => {
+                setShouldRenderPdf(false);
+            };
+        }, [])
+    );
 
     useEffect(() => {
         let isMounted = true;
+        let assetLoaded: Asset | null = null;
 
         const loadPdf = async () => {
             try {
                 const [asset] = await Asset.loadAsync(require('../assets/main/hafezi_quran_emdadia.pdf'));
+                assetLoaded = asset;
 
                 if (isMounted) {
                     console.log('PDF URI:', asset.uri);
@@ -47,11 +61,12 @@ const HafeziQuran = ({ navigation, route }: HafeziQuranProps) => {
             }
         };
 
-        loadPdf();
+        if (shouldRenderPdf) {
+            loadPdf();
+        }
 
         return () => {
             isMounted = false;
-            // Cleanup PDF instance
             if (pdfRef.current) {
                 try {
                     // @ts-ignore
@@ -61,7 +76,7 @@ const HafeziQuran = ({ navigation, route }: HafeziQuranProps) => {
                 }
             }
         };
-    }, []);
+    }, [shouldRenderPdf]);
 
     useEffect(() => {
         const isPageBookmarked = bookmarks.some(bookmark => bookmark.pageNumber === currentPage);
@@ -78,25 +93,31 @@ const HafeziQuran = ({ navigation, route }: HafeziQuranProps) => {
 
     return (
         <View style={styles.container}>
-            {isLoading ? (
+            {(!shouldRenderPdf || isLoading) ? (
                 <View style={styles.centerContent}>
                     <ActivityIndicator size="large" color="black" />
                     <Text style={styles.loadingText}>تحميل القران ...</Text>
                 </View>
             ) : (
                 <Pdf
+                    ref={pdfRef}
                     trustAllCerts={false}
                     source={{ uri: pdfUri?.toString(), cache: true }}
                     style={styles.pdf}
                     horizontal
                     enablePaging={true}
                     onPageChanged={(page, numberOfPages) => {
-                        console.log(`Current page: ${page} from number of pages: ${numberOfPages}`);
-                        setCurrentPage(page);
+                        if (shouldRenderPdf) {
+                            console.log(`Current page: ${page}`);
+                            setCurrentPage(page);
+                        }
                     }}
                     showsHorizontalScrollIndicator={false}
                     page={gotoPageNumber}
-                    ref={pdfRef}
+                    onError={(error: any) => {
+                        console.error('PDF Error:', error);
+                        setError(error?.message || 'Unknown PDF error');
+                    }}
                 />
             )}
 
@@ -106,7 +127,11 @@ const HafeziQuran = ({ navigation, route }: HafeziQuranProps) => {
             >
                 <Text>{currentPage}/614</Text>
                 <Text style={styles.maqamText}>ماقآم</Text>
-                <MaterialIcons name={isBookmarked ? "bookmark-added" : "bookmark-add"} size={18} color="black" />
+
+                <MaterialIcons
+                    name={isBookmarked ? "bookmark-added" : "bookmark-add"}
+                    size={18}
+                />
             </Pressable>
 
             <AddMaqam
@@ -164,5 +189,13 @@ const styles = StyleSheet.create({
     maqamText: {
         fontWeight: 'bold',
         fontSize: 16,
+    },
+    iconContainer: {
+        padding: 6,
+        borderRadius: 12,
+        backgroundColor: 'transparent',
+    },
+    bookmarkedIconContainer: {
+        backgroundColor: '#4CAF50',
     },
 });
