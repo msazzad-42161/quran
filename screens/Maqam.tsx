@@ -1,8 +1,9 @@
-import React from 'react';
-import { View, Text, FlatList, StyleSheet, TouchableOpacity, Pressable } from 'react-native';
+import React, { useState, useCallback } from 'react';
+import { View, Text, FlatList, StyleSheet, TouchableOpacity, Alert, Pressable } from 'react-native';
 import { useQuery, useRealm } from '@realm/react';
 import { Bookmark } from '../models/Bookmark';
 import { NavigationProp, Route } from '@react-navigation/native';
+import { MaterialIcons } from '@expo/vector-icons';
 
 interface MaqamProps {
     navigation: NavigationProp<any, any>;
@@ -11,33 +12,84 @@ interface MaqamProps {
 
 export default function Maqam({ navigation, route }: MaqamProps) {
     const realm = useRealm();
-    const bookmarks = useQuery(Bookmark);
+    const bookmarks = useQuery<Bookmark>('Bookmark', collection => collection.sorted('createdAt', true));
+    const [showActions, setShowActions] = useState<string | null>(null);
 
-    const renderItem = ({ item }: { item: Bookmark }) => (
+    const handleDelete = useCallback((bookmark: Bookmark) => {
+        Alert.alert(
+            "Delete Bookmark",
+            "Are you sure you want to delete this bookmark?",
+            [
+                { text: "Cancel", style: "cancel" },
+                {
+                    text: "Delete",
+                    style: "destructive",
+                    onPress: () => {
+                        try {
+                            realm.write(() => {
+                                realm.delete(bookmark);
+                            });
+                        } catch (error) {
+                            console.error('Error deleting bookmark:', error);
+                        }
+                        setShowActions(null);
+                    }
+                }
+            ]
+        );
+    }, [realm]);
+
+    const renderItem = useCallback(({ item }: { item: Bookmark }) => (
         <Pressable
-            style={({ pressed }) => ({
-                ...styles.bookmarkContent,
-                borderBottomWidth: pressed ? 2 : 5,
-                borderRightWidth: pressed ? 2 : 5,
-                borderTopWidth: pressed ? 2 : 1,
-                borderLeftWidth: pressed ? 2 : 1,
-                backgroundColor: pressed ? '#e8e8e8' : '#f5f5f5',
-                // transform: pressed ? [{ translateY: 2 }, { translateX: 2 }] : [],
-            })}
+            style={({ pressed }) => [
+                styles.bookmarkWrapper,
+                {
+                    borderBottomWidth: pressed ? 2 : 5,
+                    borderRightWidth: pressed ? 2 : 5,
+                    borderTopWidth: pressed ? 2 : 1,
+                    borderLeftWidth: pressed ? 2 : 1,
+                    backgroundColor: pressed ? '#e8e8e8' : '#f5f5f5'
+                },
+                showActions === item._id.toHexString() && styles.bookmarkSelected
+            ]}
             onPress={() => {
-                console.log(`Navigating to page ${item.pageNumber}`);
-                navigation.navigate('hafezi', {
-                    gotoPageNumber: item.pageNumber,
-                })
+                if (showActions === item._id.toHexString()) {
+                    setShowActions(null);
+                } else {
+                    navigation.navigate('hafezi', {
+                        gotoPageNumber: item.pageNumber,
+                    });
+                }
             }}
+            onLongPress={() => setShowActions(item._id.toHexString())}
         >
-            <Text style={styles.pageNumber}>Page: {item.pageNumber}</Text>
-            <Text style={styles.details}>{item.details}</Text>
-            <Text style={styles.date}>
-                {new Date(item.createdAt).toLocaleDateString()}
-            </Text>
+            <View style={styles.bookmarkContent}>
+                <Text style={styles.pageNumber}>Page: {item.pageNumber}</Text>
+                <Text style={styles.details}>{item.details}</Text>
+                <Text style={styles.date}>
+                    {new Date(item.createdAt).toLocaleDateString()}
+                </Text>
+            </View>
+
+            {showActions === item._id.toHexString() && (
+                <View style={styles.actionButtons}>
+                    <TouchableOpacity
+                        style={[styles.actionButton, styles.deleteButton]}
+                        onPress={() => handleDelete(item)}
+                    >
+                        <MaterialIcons name="delete" size={20} color="#ccc" />
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                        style={[styles.actionButton, styles.editButton]}
+                        onPress={() => handleDelete(item)}
+                    >
+                        <MaterialIcons name="edit" size={20} color="#ccc" />
+                    </TouchableOpacity>
+                </View>
+            )}
         </Pressable>
-    );
+    ), [showActions, navigation, handleDelete]);
+
     return (
         <View style={styles.container}>
             {bookmarks.length === 0 ? (
@@ -46,8 +98,9 @@ export default function Maqam({ navigation, route }: MaqamProps) {
                 <FlatList
                     data={bookmarks}
                     renderItem={renderItem}
-                    keyExtractor={item => item._id.toString()}
+                    keyExtractor={item => item._id.toHexString()}
                     contentContainerStyle={styles.listContainer}
+                    extraData={showActions}
                 />
             )}
         </View>
@@ -63,14 +116,20 @@ const styles = StyleSheet.create({
         padding: 16,
         gap: 10,
     },
-    bookmarkContent: {
+    bookmarkWrapper: {
         flex: 1,
+        borderRadius: 10,
+        marginBottom: 10,
+        borderColor: '#ccc',
+        overflow: 'hidden',
+    },
+    bookmarkContent: {
         backgroundColor: '#f5f5f5',
         borderRadius: 10,
-        padding: 16,
-        borderBottomWidth: 5,
-        borderRightWidth: 5,
-        borderColor: '#ccc',
+        padding: 16
+    },
+    bookmarkSelected: {
+        backgroundColor: '#e8e8e8',
     },
     pageNumber: {
         fontSize: 16,
@@ -86,16 +145,20 @@ const styles = StyleSheet.create({
         fontSize: 12,
         color: '#999',
     },
-    deleteButton: {
-        backgroundColor: '#ff4444',
+    actionButtons: {
+        flexDirection: 'row',
+        justifyContent: 'flex-end',
+        overflow: 'hidden',
+    },
+    actionButton: {
         padding: 8,
-        borderRadius: 4,
-        marginLeft: 8,
+        flex: 1,
+        alignItems: 'center',
+        justifyContent: 'center',
+
     },
-    deleteText: {
-        color: '#fff',
-        fontSize: 14,
-    },
+    deleteButton: {},
+    editButton: {},
     noBookmarks: {
         textAlign: 'center',
         fontSize: 16,
